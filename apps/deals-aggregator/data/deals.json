@@ -1,0 +1,73 @@
+[
+  {
+    "id": "d1",
+    "title": "Echo Dot 5ª Geração com Alexa",
+    "store": "amazon",
+    "category": "eletronicos",
+    "imageUrl": "https://m.media-amazon.com/images/I/71xoR4A6q-L._AC_SL1500_.jpg",
+    "price": 299.0,
+    "oldPrice": 499.0,
+    "url": "https://www.amazon.com.br/dp/B09B8VN9ZX",
+    "productId": "B09B8VN9ZX",
+    "createdAt": "2026-04-25T10:00:00Z",
+    "featured": true
+  },
+  {
+    "id": "d2",
+    "title": "Fone Bluetooth JBL Tune 510BT",
+    "store": "mercadolivre",
+    "category": "eletronicos",
+    "imageUrl": "https://http2.mlstatic.com/D_NQ_NP_2X_846559-MLA50342916244_062022-F.webp",
+    "price": 199.9,
+    "oldPrice": 349.0,
+    "url": "https://www.mercadolivre.com.br/p/MLB18895566",
+    "createdAt": "2026-04-25T09:30:00Z"
+  },
+  {
+    "id": "d3",
+    "title": "Tênis Nike Revolution 6",
+    "store": "shopee",
+    "category": "esporte",
+    "imageUrl": "https://down-br.img.susercontent.com/file/br-11134207-7r98o-lp4dv8x4t9j5b9",
+    "price": 189.0,
+    "oldPrice": 299.0,
+    "url": "https://shopee.com.br/product/123456/789012",
+    "coupon": "OFERTA20",
+    "createdAt": "2026-04-25T08:15:00Z"
+  },
+  {
+    "id": "d4",
+    "title": "Smart TV LG 50\" 4K",
+    "store": "magalu",
+    "category": "eletronicos",
+    "imageUrl": "https://a-static.mlcdn.com.br/800x560/smart-tv-50-4k-lg/magazineluiza/237218200/d65e.jpg",
+    "price": 2299.0,
+    "oldPrice": 2999.0,
+    "url": "https://www.magazineluiza.com.br/smart-tv-50-4k-lg/p/237218200",
+    "createdAt": "2026-04-24T20:00:00Z",
+    "featured": true
+  },
+  {
+    "id": "d5",
+    "title": "Liquidificador Mondial 3 Velocidades",
+    "store": "amazon",
+    "category": "casa",
+    "imageUrl": "https://m.media-amazon.com/images/I/61pKcKv8x4L._AC_SL1500_.jpg",
+    "price": 79.9,
+    "oldPrice": 129.9,
+    "url": "https://www.amazon.com.br/dp/B07PXGQC1Q",
+    "productId": "B07PXGQC1Q",
+    "createdAt": "2026-04-24T18:00:00Z"
+  },
+  {
+    "id": "d6",
+    "title": "Perfume Natura Essencial",
+    "store": "outros",
+    "category": "beleza",
+    "imageUrl": "https://images.unsplash.com/photo-1541643600914-78b084683601?w=600",
+    "price": 119.0,
+    "oldPrice": 189.0,
+    "url": "https://www.natura.com.br/p/12345",
+    "createdAt": "2026-04-24T15:00:00Z"
+  }
+]
