@@ -87,7 +87,7 @@ async function refreshAccessToken() {
   return memo.access_token;
 }
 
-async function getToken() {
+export async function getToken() {
   if (canRefresh) {
     if (memo && memo.expires_at > Date.now()) return memo.access_token;
     return refreshAccessToken();
