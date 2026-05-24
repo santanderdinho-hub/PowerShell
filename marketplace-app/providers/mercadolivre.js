@@ -96,13 +96,17 @@ export async function getToken() {
 }
 
 /* ── chamadas à API ────────────────────────────────────────── */
-async function searchRaw(query, limit) {
+/* O ML bloqueou /sites/MLB/search (403). Usamos a API de catálogo:
+   /products/search (busca por texto) + /products/{id} (preço, imagem,
+   link) e /trends (mais buscados) pra montar o feed. */
+
+async function api(path) {
   const token = await getToken();
-  const url = `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(query)}&limit=${limit}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`https://api.mercadolibre.com${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   if (!res.ok) throw new Error(`Mercado Livre HTTP ${res.status}: ${await res.text()}`);
-  const json = await res.json();
-  return json.results || [];
+  return res.json();
 }
 
 function withAffiliate(url) {
@@ -111,42 +115,68 @@ function withAffiliate(url) {
   return `${url}${sep}matt_tool=${encodeURIComponent(AFFILIATE_TAG)}`;
 }
 
-function normalize(item) {
-  const price = Number(item.price) || 0;
-  const priceOld = Number(item.original_price) || null;
+/** Detalha um produto do catálogo (traz preço, imagem e permalink). */
+async function getProduct(productId) {
+  const p = await api(`/products/${productId}`);
+  const bbw = p.buy_box_winner || {};
+  const price = Number(bbw.price) || 0;
+  const priceOld = Number(bbw.original_price) || null;
   const discountPct =
     priceOld && priceOld > price ? Math.round((1 - price / priceOld) * 100) : 0;
+  const image = p.pictures?.[0]?.secure_url || p.pictures?.[0]?.url || '';
+  const productUrl = p.permalink || `https://www.mercadolivre.com.br/p/${p.id}`;
 
   return {
-    id: `ml_${item.id}`,
+    id: `ml_${p.id}`,
     marketplace: 'mercadolivre',
-    title: item.title || '',
-    image: (item.thumbnail || '').replace('-I.jpg', '-O.jpg'),
+    title: p.name || '',
+    image,
     price,
     priceOld,
     discountPct,
     rating: null,
-    sales: Number(item.sold_quantity) || 0,
+    sales: 0,
     commissionRate: null,
-    productUrl: item.permalink || '',
-    affiliateUrl: withAffiliate(item.permalink || ''),
+    productUrl,
+    affiliateUrl: withAffiliate(productUrl),
   };
 }
 
-export async function getDeals(limit = 30) {
-  const perTerm = Math.max(5, Math.ceil(limit / DEFAULT_TERMS.length));
-  const results = await Promise.all(
-    DEFAULT_TERMS.map((t) => searchRaw(t, perTerm).catch(() => [])),
+/** Detalha vários ids de produto em paralelo, ignorando os que falharem. */
+async function detailMany(ids, limit) {
+  const slice = [...new Set(ids)].slice(0, limit);
+  const settled = await Promise.allSettled(slice.map((id) => getProduct(id)));
+  return settled
+    .filter((r) => r.status === 'fulfilled' && r.value.price > 0)
+    .map((r) => r.value);
+}
+
+/** IDs de produtos do catálogo pra uma palavra-chave. */
+async function searchProductIds(keyword, limit) {
+  const data = await api(
+    `/products/search?site_id=MLB&status=active&q=${encodeURIComponent(keyword)}&limit=${limit}`,
   );
-  const seen = new Set();
-  return results
-    .flat()
-    .map(normalize)
-    .filter((p) => (seen.has(p.id) ? false : seen.add(p.id)))
-    .slice(0, limit);
+  return (data.results || []).map((r) => r.id || r).filter(Boolean);
 }
 
 export async function search(keyword, limit = 30) {
-  const items = await searchRaw(keyword, limit);
-  return items.map(normalize);
+  const ids = await searchProductIds(keyword, limit);
+  return detailMany(ids, limit);
 }
+
+export async function getDeals(limit = 24) {
+  // Pega os termos mais buscados do momento; cai pros termos padrão se falhar.
+  let terms = DEFAULT_TERMS;
+  try {
+    const trends = await api('/trends/MLB');
+    const fromTrends = (trends || []).map((t) => t.keyword).filter(Boolean);
+    if (fromTrends.length) terms = fromTrends.slice(0, 6);
+  } catch { /* usa DEFAULT_TERMS */ }
+
+  const perTerm = 4;
+  const idLists = await Promise.all(
+    terms.map((t) => searchProductIds(t, perTerm).catch(() => [])),
+  );
+  return detailMany(idLists.flat(), limit);
+}
+
