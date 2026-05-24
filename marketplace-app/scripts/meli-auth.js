@@ -3,7 +3,8 @@
  *
  * Pré-requisitos no .env: MELI_CLIENT_ID, MELI_CLIENT_SECRET, MELI_REDIRECT_URI
  * (o redirect precisa estar cadastrado no seu app em developers.mercadolivre.com.br;
- *  pode ser https://localhost — basta bater com o cadastrado).
+ *  o ML exige HTTPS e recusa localhost — use ex: https://httpbin.org/anything,
+ *  basta bater exatamente com o cadastrado no painel).
  *
  * Passo 1:  node scripts/meli-auth.js
  *           -> imprime a URL de autorização. Abra no navegador, autorize,
