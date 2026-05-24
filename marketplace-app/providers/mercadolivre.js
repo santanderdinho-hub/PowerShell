@@ -1,34 +1,106 @@
 /**
- * Provider Mercado Livre — API oficial.
+ * Provider Mercado Livre — API oficial com renovação AUTOMÁTICA de token.
  *
  * Doc: https://developers.mercadolivre.com.br
- * A busca usa o endpoint /sites/MLB/search, que hoje exige um access
- * token (OAuth2). Gere o token no painel de aplicações e coloque em
- * MELI_ACCESS_TOKEN no .env.
  *
- * Observação honesta: o ML não expõe um feed público de "ofertas do dia"
- * pela API. Por isso o ML entra principalmente na BUSCA. No feed
- * consolidado ele contribui com termos populares (ver DEFAULT_TERMS).
+ * O access token do ML expira em ~6h. Pra não ter que ficar gerando token
+ * toda hora, este provider usa o fluxo de refresh token:
+ *
+ *   1) Você gera UMA vez um refresh_token (via `npm run meli-auth`).
+ *   2) O app troca o refresh_token por um access_token novo sempre que
+ *      o atual expira — sozinho.
+ *   3) O ML rotaciona o refresh_token a cada uso; por isso guardamos o
+ *      mais recente em .meli-token.json (fora do git) pra sobreviver a
+ *      reinícios do servidor.
+ *
+ * Alternativa simples (sem auto-refresh): preencher só MELI_ACCESS_TOKEN
+ * no .env — funciona, mas você terá que trocar o token a cada 6h.
  */
 
-const TOKEN = process.env.MELI_ACCESS_TOKEN?.trim();
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const STORE_PATH = join(__dirname, '..', '.meli-token.json');
+
+const CLIENT_ID = process.env.MELI_CLIENT_ID?.trim();
+const CLIENT_SECRET = process.env.MELI_CLIENT_SECRET?.trim();
+const ENV_REFRESH = process.env.MELI_REFRESH_TOKEN?.trim();
+const STATIC_TOKEN = process.env.MELI_ACCESS_TOKEN?.trim();
 const AFFILIATE_TAG = process.env.MELI_AFFILIATE_TAG?.trim();
+
+const canRefresh = Boolean(CLIENT_ID && CLIENT_SECRET && (ENV_REFRESH || readStore()?.refresh_token));
 
 export const id = 'mercadolivre';
 export const label = 'Mercado Livre';
-export const enabled = Boolean(TOKEN);
+export const enabled = Boolean(STATIC_TOKEN || canRefresh);
 
 /** Termos usados pra povoar o feed consolidado (ML não tem deals API). */
 const DEFAULT_TERMS = ['ofertas', 'smartphone', 'notebook'];
 
-async function searchRaw(query, limit) {
-  const url = `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(query)}&limit=${limit}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Mercado Livre HTTP ${res.status}: ${await res.text()}`);
+/* ── cofre de token (arquivo local, fora do git) ───────────── */
+function readStore() {
+  try {
+    return JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+  } catch {
+    return null;
   }
+}
+
+function writeStore(data) {
+  try {
+    fs.writeFileSync(STORE_PATH, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.warn('[mercadolivre] não consegui salvar o token:', e.message);
+  }
+}
+
+/* ── gestão do access token ────────────────────────────────── */
+let memo = null; // { access_token, expires_at }
+
+async function refreshAccessToken() {
+  const refresh_token = readStore()?.refresh_token || ENV_REFRESH;
+  if (!refresh_token) throw new Error('sem refresh_token (rode: npm run meli-auth)');
+
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    client_id: CLIENT_ID,
+    client_secret: CLIENT_SECRET,
+    refresh_token,
+  });
+
+  const res = await fetch('https://api.mercadolibre.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body,
+  });
+  if (!res.ok) throw new Error(`refresh falhou HTTP ${res.status}: ${await res.text()}`);
+
+  const json = await res.json();
+  // ML rotaciona o refresh_token: guarde sempre o mais novo.
+  writeStore({ refresh_token: json.refresh_token, updated_at: new Date().toISOString() });
+  memo = {
+    access_token: json.access_token,
+    expires_at: Date.now() + (json.expires_in - 120) * 1000, // 2 min de folga
+  };
+  return memo.access_token;
+}
+
+async function getToken() {
+  if (canRefresh) {
+    if (memo && memo.expires_at > Date.now()) return memo.access_token;
+    return refreshAccessToken();
+  }
+  return STATIC_TOKEN;
+}
+
+/* ── chamadas à API ────────────────────────────────────────── */
+async function searchRaw(query, limit) {
+  const token = await getToken();
+  const url = `https://api.mercadolibre.com/sites/MLB/search?q=${encodeURIComponent(query)}&limit=${limit}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Mercado Livre HTTP ${res.status}: ${await res.text()}`);
   const json = await res.json();
   return json.results || [];
 }
@@ -57,8 +129,6 @@ function normalize(item) {
     sales: Number(item.sold_quantity) || 0,
     commissionRate: null,
     productUrl: item.permalink || '',
-    // O ML gera link de afiliado na própria página; aqui devolvemos o
-    // permalink (com a tag, se configurada) pra você gerar/copiar.
     affiliateUrl: withAffiliate(item.permalink || ''),
   };
 }

@@ -17,8 +17,6 @@ const empty = $('#empty');
 const MARKET_LABELS = {
   shopee: 'Shopee',
   mercadolivre: 'Mercado Livre',
-  amazon: 'Amazon',
-  magalu: 'Magalu',
 };
 
 /* ── helpers ─────────────────────────────────────────── */

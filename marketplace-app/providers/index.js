@@ -5,10 +5,8 @@
 
 import * as shopee from './shopee.js';
 import * as mercadolivre from './mercadolivre.js';
-import * as amazon from './amazon.js';
-import * as magalu from './magalu.js';
 
-export const providers = [shopee, mercadolivre, amazon, magalu];
+export const providers = [shopee, mercadolivre];
 
 export const activeProviders = providers.filter((p) => p.enabled);
 
