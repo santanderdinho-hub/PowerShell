@@ -95,17 +95,27 @@ function normalize(node) {
 }
 
 /**
- * Feed consolidado de promoções.
- * sortType=2 ordena por vendas (produtos quentes). listType=0 = todos.
+ * Catálogo de promoções da Shopee.
+ * Busca um lote maior de ofertas e prioriza os itens com maior desconto.
+ * sortType=2 = produtos quentes (mais vendidos); listType=0 = todos.
  */
 export async function getDeals(limit = 30) {
+  const fetchLimit = Math.min(Math.max(limit, 50), 100);
   const query = `query Deals($limit: Int!) {
     productOfferV2(sortType: 2, listType: 0, page: 1, limit: $limit) {
       ${PRODUCT_FIELDS}
     }
   }`;
-  const data = await callGraphQL(query, { limit });
-  return (data?.productOfferV2?.nodes || []).map(normalize);
+  const data = await callGraphQL(query, { limit: fetchLimit });
+  const all = (data?.productOfferV2?.nodes || []).map(normalize);
+
+  // Catálogo de promoção: mostra primeiro o que tem desconto, do maior pro menor.
+  // Se vierem poucos itens com desconto, completa com os demais pra não esvaziar.
+  const discounted = all
+    .filter((p) => p.discountPct > 0)
+    .sort((a, b) => b.discountPct - a.discountPct);
+  const result = discounted.length >= 5 ? discounted : all;
+  return result.slice(0, limit);
 }
 
 /** Busca por palavra-chave (mesma query, com keyword). */
