@@ -68,7 +68,33 @@ try {
     console.log('name:', prod.json?.name);
     console.log('permalink:', prod.json?.permalink);
     console.log('pictures[0]:', JSON.stringify(prod.json?.pictures?.[0]));
-    console.log('buy_box_winner:', JSON.stringify(prod.json?.buy_box_winner, null, 2)?.slice(0, 600));
+    console.log('buy_box_winner:', JSON.stringify(prod.json?.buy_box_winner, null, 2)?.slice(0, 400));
+
+    // Fonte de preço A: listagens do produto de catálogo
+    const items = await getJson(`https://api.mercadolibre.com/products/${firstId}/items?limit=2`);
+    console.log(`\n--- /products/${firstId}/items ---`);
+    console.log('status:', items.status);
+    console.log('topo:', Object.keys(items.json || {}).join(', '));
+    console.log('1º item:', JSON.stringify(items.json?.results?.[0], null, 2)?.slice(0, 600));
+  }
+
+  // Fonte de preço B: itens dos destaques (mais vendidos)
+  const hl = await getJson('https://api.mercadolibre.com/highlights/MLB/category/MLB1051');
+  console.log('\n--- /highlights/MLB/category/MLB1051 ---');
+  console.log('status:', hl.status);
+  console.log('topo:', Object.keys(hl.json || {}).join(', '));
+  const hlFirst = hl.json?.content?.[0];
+  console.log('content[0]:', JSON.stringify(hlFirst));
+  const itemId = hlFirst?.id;
+  if (itemId && /^ML/.test(itemId)) {
+    const it = await getJson(`https://api.mercadolibre.com/items/${itemId}`);
+    console.log(`\n--- /items/${itemId} ---`);
+    console.log('status:', it.status);
+    console.log('title:', it.json?.title);
+    console.log('price:', it.json?.price, '| original_price:', it.json?.original_price);
+    console.log('available_quantity:', it.json?.available_quantity);
+    console.log('permalink:', it.json?.permalink);
+    console.log('thumbnail:', it.json?.thumbnail);
   }
 } catch (e) {
   console.log('dump falhou:', e.message);

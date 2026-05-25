@@ -151,7 +151,7 @@ async function detailMany(ids, limit) {
   const slice = [...new Set(ids)].slice(0, limit);
   const settled = await Promise.allSettled(slice.map((id) => getProduct(id)));
   return settled
-    .filter((r) => r.status === 'fulfilled' && r.value.title && r.value.price)
+    .filter((r) => r.status === 'fulfilled' && r.value.title)
     .map((r) => r.value);
 }
 
