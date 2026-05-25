@@ -92,8 +92,14 @@ try {
     console.log(`\n--- /products/${hlId} (mais vendido #1) ---`);
     console.log('status:', pr.status);
     console.log('name:', pr.json?.name);
-    console.log('permalink:', pr.json?.permalink);
     console.log('buy_box_winner:', JSON.stringify(pr.json?.buy_box_winner, null, 2)?.slice(0, 500));
+
+    // TESTE-CHAVE: listagens competindo de um produto EM ESTOQUE
+    const its = await getJson(`https://api.mercadolibre.com/products/${hlId}/items?limit=3`);
+    console.log(`\n--- /products/${hlId}/items (best-seller, EM ESTOQUE) ---`);
+    console.log('status:', its.status);
+    console.log('topo:', Object.keys(its.json || {}).join(', '));
+    console.log('1º item:', JSON.stringify(its.json?.results?.[0], null, 2)?.slice(0, 700));
   }
 } catch (e) {
   console.log('dump falhou:', e.message);
