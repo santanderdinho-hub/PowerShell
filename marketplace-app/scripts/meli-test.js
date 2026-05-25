@@ -41,3 +41,37 @@ for (const [label, url] of ENDPOINTS) {
 }
 
 console.log('\nMe mande este resultado. O que estiver "200 OK" é o caminho que vamos usar.\n');
+
+/* ── dump do formato real (pra ajustar a normalização) ───────── */
+async function getJson(url) {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  return { status: res.status, json: await res.json().catch(() => null) };
+}
+
+console.log('═══ FORMATO CRU (cole isto também) ═══\n');
+
+try {
+  const search = await getJson(
+    'https://api.mercadolibre.com/products/search?site_id=MLB&status=active&q=notebook&limit=3',
+  );
+  console.log('--- /products/search (notebook) ---');
+  console.log('status:', search.status);
+  console.log('chaves do topo:', Object.keys(search.json || {}).join(', '));
+  const first = search.json?.results?.[0];
+  console.log('1º resultado:', JSON.stringify(first, null, 2)?.slice(0, 800));
+
+  const firstId = first?.id || first;
+  if (firstId && typeof firstId === 'string') {
+    const prod = await getJson(`https://api.mercadolibre.com/products/${firstId}`);
+    console.log(`\n--- /products/${firstId} ---`);
+    console.log('status:', prod.status);
+    console.log('name:', prod.json?.name);
+    console.log('permalink:', prod.json?.permalink);
+    console.log('pictures[0]:', JSON.stringify(prod.json?.pictures?.[0]));
+    console.log('buy_box_winner:', JSON.stringify(prod.json?.buy_box_winner, null, 2)?.slice(0, 600));
+  }
+} catch (e) {
+  console.log('dump falhou:', e.message);
+}
+console.log('');
+
