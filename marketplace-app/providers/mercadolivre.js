@@ -36,9 +36,6 @@ export const id = 'mercadolivre';
 export const label = 'Mercado Livre';
 export const enabled = Boolean(STATIC_TOKEN || canRefresh);
 
-/** Termos usados pra povoar o feed consolidado (ML não tem deals API). */
-const DEFAULT_TERMS = ['ofertas', 'smartphone', 'notebook'];
-
 /* ── cofre de token (arquivo local, fora do git) ───────────── */
 function readStore() {
   try {
@@ -171,20 +168,10 @@ export async function search(keyword, limit = 30, page = 1) {
   return detailMany(ids, limit);
 }
 
-export async function getDeals(limit = 24, page = 1) {
-  // Pega os termos mais buscados do momento; cai pros termos padrão se falhar.
-  let terms = DEFAULT_TERMS;
-  try {
-    const trends = await api('/trends/MLB');
-    const fromTrends = (trends || []).map((t) => t.keyword).filter(Boolean);
-    if (fromTrends.length) terms = fromTrends.slice(0, 6);
-  } catch { /* usa DEFAULT_TERMS */ }
-
-  const perTerm = 6;
-  const offset = (page - 1) * perTerm;
-  const idLists = await Promise.all(
-    terms.map((t) => searchProductIds(t, perTerm, offset).catch(() => [])),
-  );
-  return detailMany(idLists.flat(), limit);
+// O ML não entra no feed de "Promoções": a API não expõe preço pra pessoa
+// física (buy_box_winner vem null até em best-seller em estoque), então não
+// dá pra montar um catálogo de promoção confiável. O ML fica só na BUSCA.
+export async function getDeals() {
+  return [];
 }
 
