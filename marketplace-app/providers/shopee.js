@@ -118,3 +118,14 @@ export async function search(keyword, limit = 30) {
   const data = await callGraphQL(query, { kw: keyword, limit });
   return (data?.productOfferV2?.nodes || []).map(normalize);
 }
+
+/** Converte uma URL de produto da Shopee num link curto de afiliado. */
+export async function generateShortLink(originUrl) {
+  const query = `mutation Link($url: String!) {
+    generateShortLink(input: { originUrl: $url, subIds: ["promohunt"] }) {
+      shortLink
+    }
+  }`;
+  const data = await callGraphQL(query, { url: originUrl });
+  return data?.generateShortLink?.shortLink || null;
+}

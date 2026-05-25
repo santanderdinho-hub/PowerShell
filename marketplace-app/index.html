@@ -9,36 +9,57 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand__icon">🔥</span> PromoHunt</div>
+    <nav class="tabs">
+      <button class="tab active" data-view="discover">Descobrir</button>
+      <button class="tab" data-view="generate">Gerar post</button>
+    </nav>
+  </header>
+
+  <!-- ── VIEW: Descobrir ── -->
+  <section id="view-discover">
     <div class="search">
       <input id="searchInput" type="text" placeholder="Buscar produto em todos os marketplaces…" autocomplete="off" />
       <button id="searchBtn">Buscar</button>
       <button id="dealsBtn" title="Voltar pras promoções do dia">★ Promoções</button>
     </div>
-  </header>
 
-  <div class="status-bar" id="statusBar"></div>
+    <div class="status-bar" id="statusBar"></div>
 
-  <div class="filters">
-    <span class="filters__label">Marketplace:</span>
-    <div class="chips" id="marketChips"></div>
-    <span class="filters__label">Desconto mín.:</span>
-    <select id="minDiscount">
-      <option value="0">Qualquer</option>
-      <option value="10">10%+</option>
-      <option value="20">20%+</option>
-      <option value="30">30%+</option>
-      <option value="50">50%+</option>
-    </select>
-  </div>
-
-  <main>
-    <p class="results-count" id="resultsCount"></p>
-    <div class="grid" id="grid"></div>
-    <div class="empty" id="empty" hidden>
-      <p>Nada por aqui.</p>
-      <small id="emptyHint"></small>
+    <div class="filters">
+      <span class="filters__label">Marketplace:</span>
+      <div class="chips" id="marketChips"></div>
+      <span class="filters__label">Desconto mín.:</span>
+      <select id="minDiscount">
+        <option value="0">Qualquer</option>
+        <option value="10">10%+</option>
+        <option value="20">20%+</option>
+        <option value="30">30%+</option>
+        <option value="50">50%+</option>
+      </select>
     </div>
-  </main>
+
+    <main>
+      <p class="results-count" id="resultsCount"></p>
+      <div class="grid" id="grid"></div>
+      <div class="empty" id="empty" hidden>
+        <p>Nada por aqui.</p>
+        <small id="emptyHint"></small>
+      </div>
+    </main>
+  </section>
+
+  <!-- ── VIEW: Gerar post ── -->
+  <section id="view-generate" hidden>
+    <main class="generator">
+      <h2>Cole a URL do produto</h2>
+      <p class="generator__hint">Funciona com Shopee, Mercado Livre, Amazon e Magalu. Eu gero o link de afiliado e a mensagem pronta pro grupo.</p>
+      <div class="generator__input">
+        <input id="urlInput" type="text" placeholder="https://… (cole o link do produto)" autocomplete="off" />
+        <button id="genBtn">Gerar</button>
+      </div>
+      <div id="genResult" class="gen-result" hidden></div>
+    </main>
+  </section>
 
   <div class="toast" id="toast"></div>
   <script src="app.js"></script>

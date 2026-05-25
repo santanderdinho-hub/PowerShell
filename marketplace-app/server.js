@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 import { activeProviders, providerStatus } from './providers/index.js';
+import { linkify } from './providers/linkify.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -66,6 +67,21 @@ app.get('/api/search', async (req, res) => {
   const { products, errors } = await gather('search', q, limit);
   products.sort((a, b) => (b.discountPct || 0) - (a.discountPct || 0));
   res.json({ ok: true, count: products.length, products, errors });
+});
+
+/** Gerador de post: URL de produto -> link de afiliado + mensagem pronta. */
+app.get('/api/linkify', async (req, res) => {
+  const url = (req.query.url || '').trim();
+  if (!/^https?:\/\//.test(url)) {
+    return res.status(400).json({ ok: false, error: 'informe uma URL válida (http/https)' });
+  }
+  try {
+    const data = await linkify(url);
+    res.json({ ok: true, ...data });
+  } catch (err) {
+    console.error('[linkify]', err.message);
+    res.status(502).json({ ok: false, error: err.message });
+  }
 });
 
 app.listen(PORT, () => {

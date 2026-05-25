@@ -36,7 +36,20 @@ body {
 .brand { font-size: 20px; font-weight: 800; white-space: nowrap; }
 .brand__icon { margin-right: 4px; }
 
-.search { display: flex; gap: 8px; flex: 1; min-width: 280px; }
+.tabs { display: flex; gap: 8px; }
+.tab {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+.tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.search { display: flex; gap: 8px; padding: 16px 24px 0; min-width: 280px; }
 .search input {
   flex: 1;
   padding: 10px 14px;
@@ -202,3 +215,59 @@ main { padding: 8px 24px 48px; }
   z-index: 100;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── gerador de post ── */
+.generator { max-width: 680px; }
+.generator h2 { margin: 8px 0 4px; }
+.generator__hint { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+.generator__input { display: flex; gap: 8px; margin-bottom: 20px; }
+.generator__input input {
+  flex: 1;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 14px;
+}
+.generator__input input:focus { outline: none; border-color: var(--accent); }
+#genBtn {
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gen-result { display: flex; flex-direction: column; gap: 8px; }
+.gen-loading, .gen-error, .gen-warn { color: var(--muted); font-size: 14px; }
+.gen-error { color: #ff6b6b; }
+.gen-warn { color: var(--accent-2); font-size: 13px; margin: 4px 0 0; }
+.gen-card {
+  display: flex;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.gen-img { width: 90px; height: 90px; object-fit: contain; background: #fff; border-radius: 8px; }
+.gen-meta { display: flex; flex-direction: column; gap: 6px; }
+.gen-meta h3 { margin: 0; font-size: 15px; font-weight: 500; }
+.gen-price { color: var(--green); font-size: 18px; }
+.gen-label { font-size: 12px; color: var(--muted); margin-top: 10px; }
+.gen-row { display: flex; gap: 8px; align-items: stretch; }
+.gen-out {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+.gen-msg { line-height: 1.5; }

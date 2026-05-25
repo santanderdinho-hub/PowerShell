@@ -181,6 +181,72 @@ $('#minDiscount').onchange = (e) => {
   render();
 };
 
+/* ── abas (Descobrir / Gerar post) ───────────────────── */
+document.querySelectorAll('.tab').forEach((tab) => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+    tab.classList.add('active');
+    const view = tab.dataset.view;
+    $('#view-discover').hidden = view !== 'discover';
+    $('#view-generate').hidden = view !== 'generate';
+  };
+});
+
+/* ── gerador de post ─────────────────────────────────── */
+async function generatePost(url) {
+  const box = $('#genResult');
+  box.hidden = false;
+  box.innerHTML = '<p class="gen-loading">Gerando…</p>';
+
+  let data;
+  try {
+    data = await fetch(`${API}/api/linkify?url=${encodeURIComponent(url)}`).then((r) => r.json());
+  } catch {
+    box.innerHTML = '<p class="gen-error">Falha de rede.</p>';
+    return;
+  }
+  if (!data.ok) {
+    box.innerHTML = `<p class="gen-error">${data.error || 'erro'}</p>`;
+    return;
+  }
+
+  const label = MARKET_LABELS[data.marketplace] || data.marketplace;
+  const warn = data.warning ? `<p class="gen-warn">⚠️ ${data.warning}</p>` : '';
+  const img = data.image ? `<img class="gen-img" src="${data.image}" alt="" onerror="this.remove()" />` : '';
+
+  box.innerHTML = `
+    <div class="gen-card">
+      ${img}
+      <div class="gen-meta">
+        <span class="market market--${data.marketplace}">${label}</span>
+        <h3>${data.title || '(sem título)'}</h3>
+        ${data.price ? `<strong class="gen-price">R$ ${data.price}</strong>` : ''}
+        ${warn}
+      </div>
+    </div>
+    <label class="gen-label">Link de afiliado ${data.ready ? '✅' : ''}</label>
+    <div class="gen-row">
+      <input class="gen-out" id="genLink" readonly value="${escapeAttr(data.affiliateUrl)}" />
+      <button class="btn btn--copy" id="copyLink">Copiar</button>
+    </div>
+    <label class="gen-label">Mensagem pro grupo</label>
+    <div class="gen-row">
+      <textarea class="gen-out gen-msg" id="genMsg" readonly rows="6">${data.message}</textarea>
+      <button class="btn btn--copy" id="copyMsg">Copiar</button>
+    </div>
+  `;
+  $('#copyLink').onclick = () => copyAffiliate(data.affiliateUrl);
+  $('#copyMsg').onclick = () => copyAffiliate(data.message);
+}
+
+$('#genBtn').onclick = () => {
+  const url = $('#urlInput').value.trim();
+  if (url) generatePost(url);
+};
+$('#urlInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('#genBtn').click();
+});
+
 /* ── boot ────────────────────────────────────────────── */
 (async function init() {
   await loadProviders();
