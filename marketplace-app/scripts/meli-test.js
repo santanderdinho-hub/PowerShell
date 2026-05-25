@@ -85,16 +85,15 @@ try {
   console.log('topo:', Object.keys(hl.json || {}).join(', '));
   const hlFirst = hl.json?.content?.[0];
   console.log('content[0]:', JSON.stringify(hlFirst));
-  const itemId = hlFirst?.id;
-  if (itemId && /^ML/.test(itemId)) {
-    const it = await getJson(`https://api.mercadolibre.com/items/${itemId}`);
-    console.log(`\n--- /items/${itemId} ---`);
-    console.log('status:', it.status);
-    console.log('title:', it.json?.title);
-    console.log('price:', it.json?.price, '| original_price:', it.json?.original_price);
-    console.log('available_quantity:', it.json?.available_quantity);
-    console.log('permalink:', it.json?.permalink);
-    console.log('thumbnail:', it.json?.thumbnail);
+  const hlId = hlFirst?.id;
+  if (hlId && /^ML/.test(hlId)) {
+    // highlights traz ids de PRODUTO de catálogo -> consulta /products
+    const pr = await getJson(`https://api.mercadolibre.com/products/${hlId}`);
+    console.log(`\n--- /products/${hlId} (mais vendido #1) ---`);
+    console.log('status:', pr.status);
+    console.log('name:', pr.json?.name);
+    console.log('permalink:', pr.json?.permalink);
+    console.log('buy_box_winner:', JSON.stringify(pr.json?.buy_box_winner, null, 2)?.slice(0, 500));
   }
 } catch (e) {
   console.log('dump falhou:', e.message);
