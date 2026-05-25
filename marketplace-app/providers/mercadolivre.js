@@ -145,29 +145,33 @@ async function getProduct(productId) {
   };
 }
 
-/** Detalha vários ids de produto em paralelo, ignorando os que falharem. */
+/** Detalha vários ids em paralelo. Só mantém produtos COM preço (os sem
+ *  preço = sem vendedor ativo / sem estoque, então são descartados). */
 async function detailMany(ids, limit) {
   const slice = [...new Set(ids)].slice(0, limit);
   const settled = await Promise.allSettled(slice.map((id) => getProduct(id)));
   return settled
-    .filter((r) => r.status === 'fulfilled' && r.value.title)
+    .filter((r) => r.status === 'fulfilled' && r.value.title && r.value.price)
     .map((r) => r.value);
 }
 
-/** IDs de produtos do catálogo pra uma palavra-chave. */
-async function searchProductIds(keyword, limit) {
+/** IDs de produtos do catálogo pra uma palavra-chave (com paginação por offset). */
+async function searchProductIds(keyword, limit, offset = 0) {
   const data = await api(
-    `/products/search?site_id=MLB&status=active&q=${encodeURIComponent(keyword)}&limit=${limit}`,
+    `/products/search?site_id=MLB&status=active&q=${encodeURIComponent(keyword)}&limit=${limit}&offset=${offset}`,
   );
   return (data.results || []).map((r) => r.id || r).filter(Boolean);
 }
 
-export async function search(keyword, limit = 30) {
-  const ids = await searchProductIds(keyword, limit);
+export async function search(keyword, limit = 30, page = 1) {
+  // Busca mais ids do que o limite porque vamos descartar os sem preço.
+  const fetchN = Math.min(limit * 2, 50);
+  const offset = (page - 1) * fetchN;
+  const ids = await searchProductIds(keyword, fetchN, offset);
   return detailMany(ids, limit);
 }
 
-export async function getDeals(limit = 24) {
+export async function getDeals(limit = 24, page = 1) {
   // Pega os termos mais buscados do momento; cai pros termos padrão se falhar.
   let terms = DEFAULT_TERMS;
   try {
@@ -176,9 +180,10 @@ export async function getDeals(limit = 24) {
     if (fromTrends.length) terms = fromTrends.slice(0, 6);
   } catch { /* usa DEFAULT_TERMS */ }
 
-  const perTerm = 4;
+  const perTerm = 6;
+  const offset = (page - 1) * perTerm;
   const idLists = await Promise.all(
-    terms.map((t) => searchProductIds(t, perTerm).catch(() => [])),
+    terms.map((t) => searchProductIds(t, perTerm, offset).catch(() => [])),
   );
   return detailMany(idLists.flat(), limit);
 }

@@ -199,6 +199,19 @@ main { padding: 8px 24px 48px; }
 .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
 .empty small { display: block; margin-top: 6px; }
 
+.load-more { display: flex; justify-content: center; padding: 28px 0; }
+.load-more button {
+  padding: 12px 28px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.load-more button:hover { border-color: var(--accent); }
+
 /* ── toast ── */
 .toast {
   position: fixed;

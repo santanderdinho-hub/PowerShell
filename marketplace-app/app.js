@@ -2,11 +2,16 @@
 
 const API = ''; // mesmo host do servidor
 
+const PAGE_SIZE = 30;
 const state = {
-  all: [],            // produtos carregados
+  all: [],            // produtos carregados (acumula com "carregar mais")
   market: 'all',      // filtro de marketplace
   minDiscount: 0,     // filtro de desconto
   mode: 'deals',      // 'deals' | 'search'
+  query: null,        // termo de busca atual (null = modo promoções)
+  page: 1,            // página já carregada
+  busy: false,        // carregando mais?
+  exhausted: false,   // acabou (última página não trouxe nada novo)?
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -74,25 +79,56 @@ function chip(id, label, active) {
   return b;
 }
 
-/* ── carregamento de dados ───────────────────────────── */
+/* ── carregamento de dados (com paginação) ───────────── */
+function pageUrl(page) {
+  return state.query
+    ? `${API}/api/search?q=${encodeURIComponent(state.query)}&limit=${PAGE_SIZE}&page=${page}`
+    : `${API}/api/deals?limit=${PAGE_SIZE}&page=${page}`;
+}
+
 async function loadDeals() {
   state.mode = 'deals';
-  resultsCount.textContent = 'Carregando promoções…';
-  const data = await fetch(`${API}/api/deals?limit=50`).then((r) => r.json());
-  state.all = data.products || [];
-  reportErrors(data.errors);
-  render();
+  state.query = null;
+  await loadFirstPage('Carregando promoções…');
 }
 
 async function runSearch(q) {
   state.mode = 'search';
-  resultsCount.textContent = `Buscando "${q}"…`;
-  const data = await fetch(`${API}/api/search?q=${encodeURIComponent(q)}&limit=50`).then((r) =>
-    r.json(),
-  );
+  state.query = q;
+  await loadFirstPage(`Buscando "${q}"…`);
+}
+
+async function loadFirstPage(msg) {
+  state.all = [];
+  state.page = 1;
+  state.exhausted = false;
+  resultsCount.textContent = msg;
+  const data = await fetch(pageUrl(1)).then((r) => r.json());
   state.all = data.products || [];
+  state.exhausted = (data.products || []).length === 0;
   reportErrors(data.errors);
   render();
+}
+
+async function loadMore() {
+  if (state.busy || state.exhausted) return;
+  state.busy = true;
+  const btn = $('#loadMoreBtn');
+  if (btn) btn.textContent = 'Carregando…';
+  try {
+    const data = await fetch(pageUrl(state.page + 1)).then((r) => r.json());
+    const novos = (data.products || []).filter((p) => !state.all.some((x) => x.id === p.id));
+    state.page += 1;
+    state.all.push(...novos);
+    if (novos.length === 0) state.exhausted = true;
+    reportErrors(data.errors);
+    render();
+  } catch {
+    toast('Falha ao carregar mais.');
+  } finally {
+    state.busy = false;
+    if (btn) btn.textContent = 'Carregar mais';
+  }
 }
 
 function reportErrors(errors) {
@@ -105,14 +141,19 @@ function reportErrors(errors) {
 
 /* ── render ──────────────────────────────────────────── */
 function render() {
-  let items = state.all.filter((p) => {
-    if (state.market !== 'all' && p.marketplace !== state.market) return false;
-    if ((p.discountPct || 0) < state.minDiscount) return false;
-    return true;
-  });
+  let items = state.all
+    .filter((p) => {
+      if (state.market !== 'all' && p.marketplace !== state.market) return false;
+      if ((p.discountPct || 0) < state.minDiscount) return false;
+      return true;
+    })
+    .sort((a, b) => (b.discountPct || 0) - (a.discountPct || 0));
 
+  const loadMoreWrap = $('#loadMore');
   grid.innerHTML = '';
   empty.hidden = items.length > 0;
+  loadMoreWrap.hidden = state.exhausted;
+
   if (!items.length) {
     $('#emptyHint').textContent =
       state.mode === 'deals'
@@ -180,6 +221,7 @@ $('#minDiscount').onchange = (e) => {
   state.minDiscount = Number(e.target.value);
   render();
 };
+$('#loadMoreBtn').onclick = loadMore;
 
 /* ── abas (Descobrir / Gerar post) ───────────────────── */
 document.querySelectorAll('.tab').forEach((tab) => {

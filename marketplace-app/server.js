@@ -54,7 +54,8 @@ app.get('/api/providers', (_req, res) => res.json(providerStatus()));
 /** Feed consolidado de promoções (a página principal). */
 app.get('/api/deals', async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 30, 60);
-  const { products, errors } = await gather('getDeals', limit);
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const { products, errors } = await gather('getDeals', limit, page);
   products.sort((a, b) => (b.discountPct || 0) - (a.discountPct || 0));
   res.json({ ok: true, count: products.length, products, errors });
 });
@@ -63,8 +64,9 @@ app.get('/api/deals', async (req, res) => {
 app.get('/api/search', async (req, res) => {
   const q = (req.query.q || '').trim();
   const limit = Math.min(Number(req.query.limit) || 30, 60);
+  const page = Math.max(1, Number(req.query.page) || 1);
   if (!q) return res.status(400).json({ ok: false, error: 'parâmetro q obrigatório' });
-  const { products, errors } = await gather('search', q, limit);
+  const { products, errors } = await gather('search', q, limit, page);
   products.sort((a, b) => (b.discountPct || 0) - (a.discountPct || 0));
   res.json({ ok: true, count: products.length, products, errors });
 });
