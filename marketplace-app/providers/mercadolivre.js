@@ -115,14 +115,17 @@ function withAffiliate(url) {
   return `${url}${sep}matt_tool=${encodeURIComponent(AFFILIATE_TAG)}`;
 }
 
-/** Detalha um produto do catálogo (traz preço, imagem e permalink). */
+/** Detalha um produto do catálogo (nome, imagem, link e preço quando houver).
+ *  Obs.: o catálogo do ML não tem permalink (vem vazio) — montamos a URL
+ *  pelo id. E buy_box_winner pode ser null (produto sem vendedor ativo);
+ *  nesse caso o preço fica indisponível, mas o produto ainda aparece. */
 async function getProduct(productId) {
   const p = await api(`/products/${productId}`);
   const bbw = p.buy_box_winner || {};
-  const price = Number(bbw.price) || 0;
+  const price = Number(bbw.price) || null;
   const priceOld = Number(bbw.original_price) || null;
   const discountPct =
-    priceOld && priceOld > price ? Math.round((1 - price / priceOld) * 100) : 0;
+    price && priceOld && priceOld > price ? Math.round((1 - price / priceOld) * 100) : 0;
   const image = p.pictures?.[0]?.secure_url || p.pictures?.[0]?.url || '';
   const productUrl = p.permalink || `https://www.mercadolivre.com.br/p/${p.id}`;
 
@@ -147,7 +150,7 @@ async function detailMany(ids, limit) {
   const slice = [...new Set(ids)].slice(0, limit);
   const settled = await Promise.allSettled(slice.map((id) => getProduct(id)));
   return settled
-    .filter((r) => r.status === 'fulfilled' && r.value.price > 0)
+    .filter((r) => r.status === 'fulfilled' && r.value.title)
     .map((r) => r.value);
 }
 

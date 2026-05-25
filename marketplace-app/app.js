@@ -147,7 +147,7 @@ function card(p) {
       <span class="market market--${p.marketplace}">${MARKET_LABELS[p.marketplace] || p.marketplace}</span>
       <h3 class="card__title" title="${escapeAttr(p.title)}">${p.title}</h3>
       <div class="card__price">
-        <strong>${brl(p.price)}</strong> ${priceOld} ${commission}
+        ${p.price ? `<strong>${brl(p.price)}</strong>` : '<span class="price-na">ver preço no site</span>'} ${priceOld} ${commission}
       </div>
       <div class="card__actions">
         <a class="btn btn--open" href="${p.productUrl}" target="_blank" rel="noopener">Abrir produto ↗</a>

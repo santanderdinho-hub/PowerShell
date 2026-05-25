@@ -171,6 +171,7 @@ main { padding: 8px 24px 48px; }
 .card__price { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .card__price strong { font-size: 18px; color: var(--green); }
 .price-old { color: var(--muted); text-decoration: line-through; font-size: 13px; }
+.price-na { color: var(--muted); font-size: 13px; }
 .commission {
   margin-left: auto;
   font-size: 11px;
