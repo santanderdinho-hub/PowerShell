@@ -20,7 +20,9 @@ const SECRET = process.env.SHOPEE_SECRET?.trim();
 
 export const id = 'shopee';
 export const label = 'Shopee';
-export const enabled = Boolean(APP_ID && SECRET);
+export function isEnabled() { return Boolean(APP_ID && SECRET); }
+
+const REQUEST_TIMEOUT_MS = 12_000;
 
 /** Assina e dispara uma operação GraphQL contra a API de afiliados. */
 async function callGraphQL(query, variables = {}) {
@@ -31,22 +33,30 @@ async function callGraphQL(query, variables = {}) {
     .update(APP_ID + timestamp + payload + SECRET)
     .digest('hex');
 
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `SHA256 Credential=${APP_ID}, Timestamp=${timestamp}, Signature=${signature}`,
-    },
-    body: payload,
-  });
-
-  if (!res.ok) {
-    throw new Error(`Shopee HTTP ${res.status}: ${await res.text()}`);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `SHA256 Credential=${APP_ID}, Timestamp=${timestamp}, Signature=${signature}`,
+      },
+      body: payload,
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Shopee: timeout');
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
 
+  if (!res.ok) throw new Error(`Shopee HTTP ${res.status}`);
   const json = await res.json();
   if (json.errors?.length) {
-    throw new Error(`Shopee GraphQL: ${json.errors.map((e) => e.message).join('; ')}`);
+    throw new Error(`Shopee: ${json.errors.map((e) => e.message).join('; ')}`);
   }
   return json.data;
 }
@@ -70,10 +80,19 @@ const PRODUCT_FIELDS = `
   pageInfo { page limit hasNextPage }
 `;
 
+/** Normaliza priceDiscountRate: a API pode devolver 30 (já em %) ou 0.30
+ *  (fração). Tratamos os dois casos pra não zerar tudo silenciosamente. */
+function discountAsPercent(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const pct = n <= 1 ? n * 100 : n;
+  return Math.min(99, Math.round(pct));
+}
+
 /** Converte um nó da Shopee no formato normalizado do painel. */
 function normalize(node) {
   const price = Number(node.priceMin) || 0;
-  const discount = Math.round(Number(node.priceDiscountRate) || 0);
+  const discount = discountAsPercent(node.priceDiscountRate);
   const priceOld =
     discount > 0 && discount < 100 ? +(price / (1 - discount / 100)).toFixed(2) : null;
 

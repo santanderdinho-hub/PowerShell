@@ -10,8 +10,8 @@
  *   2) O app troca o refresh_token por um access_token novo sempre que
  *      o atual expira — sozinho.
  *   3) O ML rotaciona o refresh_token a cada uso; por isso guardamos o
- *      mais recente em .meli-token.json (fora do git) pra sobreviver a
- *      reinícios do servidor.
+ *      mais recente em .meli-token.json (fora do git, modo 0600) pra
+ *      sobreviver a reinícios do servidor.
  *
  * Alternativa simples (sem auto-refresh): preencher só MELI_ACCESS_TOKEN
  * no .env — funciona, mas você terá que trocar o token a cada 6h.
@@ -30,13 +30,20 @@ const ENV_REFRESH = process.env.MELI_REFRESH_TOKEN?.trim();
 const STATIC_TOKEN = process.env.MELI_ACCESS_TOKEN?.trim();
 const AFFILIATE_TAG = process.env.MELI_AFFILIATE_TAG?.trim();
 
-const canRefresh = Boolean(CLIENT_ID && CLIENT_SECRET && (ENV_REFRESH || readStore()?.refresh_token));
+const REQUEST_TIMEOUT_MS = 12_000;
 
 export const id = 'mercadolivre';
 export const label = 'Mercado Livre';
-export const enabled = Boolean(STATIC_TOKEN || canRefresh);
 
-/* ── cofre de token (arquivo local, fora do git) ───────────── */
+/** Avaliado em cada chamada (e não congelado no import) pra que rodar
+ *  `npm run meli-auth` em outro terminal ligue o provider sem reiniciar. */
+export function isEnabled() {
+  if (STATIC_TOKEN) return true;
+  if (!CLIENT_ID || !CLIENT_SECRET) return false;
+  return Boolean(ENV_REFRESH || readStore()?.refresh_token);
+}
+
+/* ── cofre de token (arquivo local, fora do git, modo 0600) ──── */
 function readStore() {
   try {
     return JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
@@ -45,16 +52,16 @@ function readStore() {
   }
 }
 
+/** Escrita atômica + modo 0600: escreve num temporário e renomeia. */
 function writeStore(data) {
-  try {
-    fs.writeFileSync(STORE_PATH, JSON.stringify(data, null, 2));
-  } catch (e) {
-    console.warn('[mercadolivre] não consegui salvar o token:', e.message);
-  }
+  const tmp = STORE_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, STORE_PATH);
 }
 
 /* ── gestão do access token ────────────────────────────────── */
-let memo = null; // { access_token, expires_at }
+let memo = null;            // { access_token, expires_at }
+let inflightRefresh = null; // dedup de refresh concorrente
 
 async function refreshAccessToken() {
   const refresh_token = readStore()?.refresh_token || ENV_REFRESH;
@@ -67,49 +74,83 @@ async function refreshAccessToken() {
     refresh_token,
   });
 
-  const res = await fetch('https://api.mercadolibre.com/oauth/token', {
+  const json = await httpJson('https://api.mercadolibre.com/oauth/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body,
   });
-  if (!res.ok) throw new Error(`refresh falhou HTTP ${res.status}: ${await res.text()}`);
 
-  const json = await res.json();
-  // ML rotaciona o refresh_token: guarde sempre o mais novo.
-  writeStore({ refresh_token: json.refresh_token, updated_at: new Date().toISOString() });
-  memo = {
-    access_token: json.access_token,
-    expires_at: Date.now() + (json.expires_in - 120) * 1000, // 2 min de folga
-  };
+  // ML rotaciona o refresh_token. Persiste ANTES de usar o novo access
+  // token: se a escrita falhar, recusamos o token novo pra não acabar com
+  // um par "access válido na memória / refresh velho em disco" que tranca
+  // a conta no próximo restart.
+  try {
+    writeStore({ refresh_token: json.refresh_token, updated_at: new Date().toISOString() });
+  } catch (e) {
+    throw new Error(`não consegui persistir o refresh_token (${e.code || e.message}). Refresh abortado pra preservar a conta.`);
+  }
+
+  // Sempre garante pelo menos 60s de validade pra evitar loop de refresh
+  // caso o ML devolva um expires_in muito curto.
+  const safeMs = Math.max(60, Number(json.expires_in) - 120) * 1000;
+  memo = { access_token: json.access_token, expires_at: Date.now() + safeMs };
   return memo.access_token;
 }
 
 export async function getToken() {
-  if (canRefresh) {
-    if (memo && memo.expires_at > Date.now()) return memo.access_token;
-    return refreshAccessToken();
+  if (STATIC_TOKEN && !CLIENT_ID) return STATIC_TOKEN;
+  if (memo && memo.expires_at > Date.now()) return memo.access_token;
+
+  // Dedup: callers concorrentes esperam o mesmo refresh.
+  if (!inflightRefresh) {
+    inflightRefresh = refreshAccessToken().finally(() => { inflightRefresh = null; });
   }
-  return STATIC_TOKEN;
+  return inflightRefresh;
 }
 
 /* ── chamadas à API ────────────────────────────────────────── */
 /* O ML bloqueou /sites/MLB/search (403). Usamos a API de catálogo:
    /products/search (busca por texto) + /products/{id} (preço, imagem,
-   link) e /trends (mais buscados) pra montar o feed. */
+   link). */
+
+async function httpJson(url, opts = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(url, { ...opts, signal: ctrl.signal });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Mercado Livre: timeout');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    // Mensagens curtas e sanitizadas, sem ecoar o corpo do upstream.
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`Mercado Livre: autenticação falhou (${res.status})`);
+    }
+    throw new Error(`Mercado Livre HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
 async function api(path) {
   const token = await getToken();
-  const res = await fetch(`https://api.mercadolibre.com${path}`, {
+  return httpJson(`https://api.mercadolibre.com${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`Mercado Livre HTTP ${res.status}: ${await res.text()}`);
-  return res.json();
 }
 
 function withAffiliate(url) {
   if (!AFFILIATE_TAG || !url) return url;
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}matt_tool=${encodeURIComponent(AFFILIATE_TAG)}`;
+  try {
+    const u = new URL(url);
+    u.searchParams.set('matt_tool', AFFILIATE_TAG);
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 
 /** Detalha um produto do catálogo (nome, imagem, link e preço quando houver).
@@ -142,8 +183,6 @@ async function getProduct(productId) {
   };
 }
 
-/** Detalha vários ids em paralelo. Só mantém produtos COM preço (os sem
- *  preço = sem vendedor ativo / sem estoque, então são descartados). */
 async function detailMany(ids, limit) {
   const slice = [...new Set(ids)].slice(0, limit);
   const settled = await Promise.allSettled(slice.map((id) => getProduct(id)));
@@ -152,16 +191,19 @@ async function detailMany(ids, limit) {
     .map((r) => r.value);
 }
 
-/** IDs de produtos do catálogo pra uma palavra-chave (com paginação por offset). */
+/** IDs de produtos do catálogo pra uma palavra-chave (paginação por offset). */
 async function searchProductIds(keyword, limit, offset = 0) {
   const data = await api(
     `/products/search?site_id=MLB&status=active&q=${encodeURIComponent(keyword)}&limit=${limit}&offset=${offset}`,
   );
-  return (data.results || []).map((r) => r.id || r).filter(Boolean);
+  // Filtra defensivamente: aceita string ou objeto com .id (string).
+  return (data.results || [])
+    .map((r) => (typeof r === 'string' ? r : r?.id))
+    .filter((x) => typeof x === 'string' && x.length > 0);
 }
 
 export async function search(keyword, limit = 30, page = 1) {
-  // Busca mais ids do que o limite porque vamos descartar os sem preço.
+  // Busca mais ids do que o limite porque vamos descartar os sem título.
   const fetchN = Math.min(limit * 2, 50);
   const offset = (page - 1) * fetchN;
   const ids = await searchProductIds(keyword, fetchN, offset);
@@ -174,4 +216,3 @@ export async function search(keyword, limit = 30, page = 1) {
 export async function getDeals() {
   return [];
 }
-

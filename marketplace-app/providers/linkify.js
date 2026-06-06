@@ -1,15 +1,10 @@
 /**
  * Linkify — transforma a URL de um produto em link de afiliado + post pronto.
  *
- * - Detecta o marketplace pela URL.
- * - Gera o link de afiliado:
- *     Shopee  -> link curto oficial via API de afiliado.
- *     Amazon  -> anexa ?tag=AMAZON_PARTNER_TAG (atribuição oficial de afiliado).
- *     ML      -> anexa sua tag (matt_tool) se houver; senão devolve a URL.
- *     Magalu  -> anexa seu id de divulgador se houver; senão devolve a URL.
- * - Busca título/preço/imagem lendo as meta tags Open Graph da página
- *   (1 fetch sob demanda — é o mesmo que o Telegram/WhatsApp fazem ao
- *   "desdobrar" um link; nada de scraping em massa).
+ * - isAllowedHost(url): só hosts de marketplace conhecidos (anti-SSRF).
+ * - detectMarketplace(url): identifica qual deles.
+ * - buildAffiliateUrl: Shopee via API; Amazon/ML/Magalu via tag se houver.
+ * - fetchMeta: lê og:title/og:image/og:price com timeout e limite de bytes.
  */
 
 import * as shopee from './shopee.js';
@@ -18,6 +13,9 @@ const AMAZON_PARTNER_TAG = process.env.AMAZON_PARTNER_TAG?.trim();
 const MELI_AFFILIATE_TAG = process.env.MELI_AFFILIATE_TAG?.trim();
 const MAGALU_AFFILIATE_ID = process.env.MAGALU_AFFILIATE_ID?.trim();
 
+const META_TIMEOUT_MS = 8_000;
+const META_MAX_BYTES = 256 * 1024; // 256 KB de HTML é mais que suficiente
+
 const LABELS = {
   shopee: 'Shopee',
   mercadolivre: 'Mercado Livre',
@@ -25,21 +23,29 @@ const LABELS = {
   magalu: 'Magalu',
 };
 
-export function detectMarketplace(url) {
-  const h = safeHost(url);
-  if (/shopee\./.test(h)) return 'shopee';
-  if (/mercadolivre\.|mercadolibre\./.test(h)) return 'mercadolivre';
-  if (/amazon\./.test(h)) return 'amazon';
-  if (/magazineluiza\.|magalu\./.test(h)) return 'magalu';
-  return 'unknown';
-}
+/** Tabela única: host pattern + label + regra de afiliado. */
+const RULES = [
+  { id: 'shopee',       host: /(^|\.)shopee\./i,                                affiliate: { kind: 'api' } },
+  { id: 'mercadolivre', host: /(^|\.)(mercadolivre|mercadolibre)\./i,           affiliate: { kind: 'param', key: 'matt_tool',  env: MELI_AFFILIATE_TAG } },
+  { id: 'amazon',       host: /(^|\.)amazon\./i,                                affiliate: { kind: 'param', key: 'tag',        env: AMAZON_PARTNER_TAG } },
+  { id: 'magalu',       host: /(^|\.)(magazineluiza|magalu)\./i,                affiliate: { kind: 'param', key: 'partner_id', env: MAGALU_AFFILIATE_ID } },
+];
 
 function safeHost(url) {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return '';
-  }
+  try { return new URL(url).hostname; } catch { return ''; }
+}
+
+function ruleFor(url) {
+  const h = safeHost(url);
+  return RULES.find((r) => r.host.test(h)) || null;
+}
+
+export function isAllowedHost(url) {
+  return Boolean(ruleFor(url));
+}
+
+export function detectMarketplace(url) {
+  return ruleFor(url)?.id || 'unknown';
 }
 
 function addParam(url, key, value) {
@@ -52,40 +58,45 @@ function addParam(url, key, value) {
   }
 }
 
-async function buildAffiliateUrl(url, marketplace) {
-  switch (marketplace) {
-    case 'shopee':
-      if (shopee.enabled) {
-        try {
-          const short = await shopee.generateShortLink(url);
-          if (short) return { affiliateUrl: short, ready: true };
-        } catch (e) {
-          return { affiliateUrl: url, ready: false, warning: `Shopee: ${e.message}` };
-        }
-      }
+async function buildAffiliateUrl(url) {
+  const rule = ruleFor(url);
+  if (!rule) return { affiliateUrl: url, ready: false, warning: 'Marketplace não reconhecido.' };
+
+  if (rule.affiliate.kind === 'api' && rule.id === 'shopee') {
+    if (!shopee.isEnabled()) {
       return { affiliateUrl: url, ready: false, warning: 'Shopee sem credencial — link sem afiliado.' };
-
-    case 'amazon':
-      if (AMAZON_PARTNER_TAG) return { affiliateUrl: addParam(url, 'tag', AMAZON_PARTNER_TAG), ready: true };
-      return { affiliateUrl: url, ready: false, warning: 'Defina AMAZON_PARTNER_TAG no .env.' };
-
-    case 'mercadolivre':
-      if (MELI_AFFILIATE_TAG) return { affiliateUrl: addParam(url, 'matt_tool', MELI_AFFILIATE_TAG), ready: true };
-      return { affiliateUrl: url, ready: false, warning: 'ML gera o link no painel de afiliados; cole a URL lá.' };
-
-    case 'magalu':
-      if (MAGALU_AFFILIATE_ID) return { affiliateUrl: addParam(url, 'partner_id', MAGALU_AFFILIATE_ID), ready: true };
-      return { affiliateUrl: url, ready: false, warning: 'Defina MAGALU_AFFILIATE_ID no .env.' };
-
-    default:
-      return { affiliateUrl: url, ready: false, warning: 'Marketplace não reconhecido.' };
+    }
+    try {
+      const short = await shopee.generateShortLink(url);
+      if (short) return { affiliateUrl: short, ready: true };
+      return { affiliateUrl: url, ready: false, warning: 'Shopee respondeu sem link curto; verifique a URL do produto.' };
+    } catch {
+      // Não vaza body do upstream pro frontend.
+      return { affiliateUrl: url, ready: false, warning: 'Falha ao gerar link curto na Shopee.' };
+    }
   }
+
+  if (rule.affiliate.kind === 'param') {
+    if (rule.affiliate.env) {
+      return { affiliateUrl: addParam(url, rule.affiliate.key, rule.affiliate.env), ready: true };
+    }
+    return {
+      affiliateUrl: url,
+      ready: false,
+      warning: `Defina a tag de afiliado do ${LABELS[rule.id]} no .env.`,
+    };
+  }
+
+  return { affiliateUrl: url, ready: false };
 }
 
-/** Lê meta tags Open Graph da página do produto. */
-async function fetchMeta(url) {
+/** GET com AbortController (timeout) e leitura limitada (anti-OOM). */
+async function fetchHtml(url) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), META_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
+      signal: ctrl.signal,
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
@@ -94,10 +105,31 @@ async function fetchMeta(url) {
       },
       redirect: 'follow',
     });
-    if (!res.ok) return {};
-    const html = await res.text();
+    if (!res.ok) return '';
+    const reader = res.body?.getReader();
+    if (!reader) return '';
+    const decoder = new TextDecoder();
+    let html = '';
+    let bytes = 0;
+    while (bytes < META_MAX_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.length;
+      html += decoder.decode(value, { stream: true });
+    }
+    try { await reader.cancel(); } catch { /* ignore */ }
+    return html;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchMeta(url) {
+  try {
+    const html = await fetchHtml(url);
+    if (!html) return {};
     return {
-      title: meta(html, 'og:title') || tag(html, 'title'),
+      title: decodeEntities(meta(html, 'og:title') || tag(html, 'title')),
       image: meta(html, 'og:image'),
       price:
         meta(html, 'product:price:amount') ||
@@ -110,19 +142,34 @@ async function fetchMeta(url) {
 }
 
 function meta(html, prop) {
-  const re = new RegExp(
-    `<meta[^>]+(?:property|name)=["']${prop}["'][^>]+content=["']([^"']+)["']`,
-    'i',
-  );
-  const m = html.match(re) || html.match(
-    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${prop}["']`, 'i'),
-  );
-  return m?.[1]?.trim() || null;
+  // Match meta tag with attributes in any order, both 'property' and 'name'.
+  const escaped = prop.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const tagRe = /<meta\b[^>]*>/gi;
+  let m;
+  while ((m = tagRe.exec(html))) {
+    const tagStr = m[0];
+    const propRe = new RegExp(`(?:property|name)\\s*=\\s*["']${escaped}["']`, 'i');
+    if (!propRe.test(tagStr)) continue;
+    const contentMatch = tagStr.match(/content\s*=\s*["']([^"']+)["']/i);
+    if (contentMatch) return contentMatch[1].trim();
+  }
+  return null;
 }
 
 function tag(html, name) {
   const m = html.match(new RegExp(`<${name}[^>]*>([^<]+)</${name}>`, 'i'));
   return m?.[1]?.trim() || null;
+}
+
+function decodeEntities(s) {
+  if (!s) return s;
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
 }
 
 function composeMessage({ title, price, marketplace, affiliateUrl }) {
@@ -135,14 +182,14 @@ function composeMessage({ title, price, marketplace, affiliateUrl }) {
   return lines.join('\n');
 }
 
-/** Ponto de entrada: URL -> { marketplace, affiliateUrl, title, image, price, message, ready, warning }. */
+/** Ponto de entrada. Devolve { marketplace, productUrl, affiliateUrl, ready,
+ *  warning, title, image, price, message }. */
 export async function linkify(url) {
   const marketplace = detectMarketplace(url);
   const [aff, metaInfo] = await Promise.all([
-    buildAffiliateUrl(url, marketplace),
+    buildAffiliateUrl(url),
     fetchMeta(url),
   ]);
-
   const result = {
     marketplace,
     productUrl: url,
@@ -153,6 +200,6 @@ export async function linkify(url) {
     image: metaInfo.image || null,
     price: metaInfo.price || null,
   };
-  result.message = composeMessage({ ...result, marketplace });
+  result.message = composeMessage(result);
   return result;
 }

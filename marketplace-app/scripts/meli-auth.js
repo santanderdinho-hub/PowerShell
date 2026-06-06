@@ -56,22 +56,33 @@ const body = new URLSearchParams({
   redirect_uri: REDIRECT_URI,
 });
 
-const res = await fetch('https://api.mercadolibre.com/oauth/token', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-  body,
-});
+let res;
+try {
+  res = await fetch('https://api.mercadolibre.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body,
+  });
+} catch (e) {
+  console.error(`Erro de rede ao chamar o ML: ${e.message}`);
+  process.exit(1);
+}
 
 if (!res.ok) {
-  console.error(`Falha ao trocar o code: HTTP ${res.status}\n${await res.text()}`);
+  console.error(`Falha ao trocar o code: HTTP ${res.status}`);
+  console.error(`Verifique se MELI_REDIRECT_URI no .env é IDÊNTICO ao cadastrado no app do ML e se o code não expirou.`);
   process.exit(1);
 }
 
 const json = await res.json();
+// Escrita atômica + modo 0600 (consistente com providers/mercadolivre.js).
+const tmp = STORE_PATH + '.tmp';
 fs.writeFileSync(
-  STORE_PATH,
+  tmp,
   JSON.stringify({ refresh_token: json.refresh_token, updated_at: new Date().toISOString() }, null, 2),
+  { mode: 0o600 },
 );
+fs.renameSync(tmp, STORE_PATH);
 
 console.log('\n✅ Pronto! refresh_token salvo em .meli-token.json');
 console.log('   O app agora renova o access token sozinho. Não precisa fazer mais nada.\n');
